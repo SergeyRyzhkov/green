@@ -1,0 +1,104 @@
+# Dependencies
+
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
+
+# Environment / secrets
+
+.env
+.env.*
+!.env.example
+
+# Build / generated files
+
+dist/
+.output/
+.nuxt/
+.nitro/
+.cache/
+.temp/
+tmp/
+coverage/
+
+# Logs
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS
+
+.DS_Store
+.DS_Store?
+Thumbs.db
+
+# IDE
+
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Local AI / model files
+
+models/
+*.gguf
+*.gguf.part
+*.bin
+*.safetensors
+
+# Local generated data
+
+data/processed.json
+data/*.bak
+data/backups/
+
+# Transcripts - usually large/local source files
+
+transcripts/
+*.srt
+*.vtt
+
+# Generated output
+
+output/
+
+# Temporary AI files
+
+.ai/
+.cline/
+.clineignore
+
+# TypeScript
+
+*.tsbuildinfo
+
+# Firebase
+
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Mac
+
+.AppleDouble
+.LSOverride
+
+# Temporary files
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Local configuration
+
+*.local.json
+*.local.yaml
+*.local.yml
