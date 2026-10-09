@@ -16,7 +16,7 @@ export const SectionsKeys = {
   reinforcement: "reinforcement",
   thermalInsulation: "thermal-insulation",
   floorsUnderfloorHeating: "floors-underfloor-heating",
-  roofRafers: "roof-rafters",
+  roofRafers: "roof-rafers",
   windowsDoors: "windows-doors",
   interiorFinishing: "interior-finishing",
   exteriorFinishing: "exterior-finishing",
@@ -47,7 +47,7 @@ export const TagsKeys = {
   reinforcement: "reinforcement",
   thermalInsulation: "thermal-insulation",
   floorsUnderfloorHeating: "floors-underfloor-heating",
-  roofRafers: "roof-rafters",
+  roofRafers: "roof-rafers",
   windowsDoors: "windows-doors",
   interiorFinishing: "interior-finishing",
   exteriorFinishing: "exterior-finishing",
@@ -57,7 +57,6 @@ export const TagsKeys = {
   sewerage: "sewerage",
   electrical: "electrical",
   ventilation: "ventilation",
-  winterOperation: "winter-operation",
   engineeringThinking: "engineering-thinking",
 } as const;
 
@@ -83,63 +82,97 @@ export interface FaqSource {
   url?: string;
 }
 
-/**
- * Исходная формулировка вопроса,
- * из которой был сформирован FAQ-вопрос.
- */
 export interface SourceQuestion {
   file: string;
   question?: string;
 }
 
-/**
- * FAQ-элемент после обработки и объединения
- * похожих вопросов.
- */
-export interface FaqItem {
-  id: string;
-  question: string;
-  answer: string;
-  sourceQuestions: SourceQuestion[];
-  sections: string[];
-  tags: string[];
-  sources: FaqSource[];
-  updatedAt: string;
-}
-
-/**
- * Результат обработки одной расшифровки
- * до объединения с существующим FAQ.
- */
-export interface ExtractedFaqItem {
+/** Результат извлечения из расшифровки. */
+export interface ExtractedQaItem {
   sourceQuestion: string;
   question: string;
   answer: string;
-  sections: string[];
-  tags: string[];
+  evidence: string;
 }
 
-/**
- * Основной JSON-файл FAQ.
- */
+/** Результат редактуры и классификации. */
+export interface ExtractedFaqItem {
+  sourceQuestion: string;
+
+  /** Оригинальные данные после извлечения. */
+  originalQuestion: string;
+  originalAnswer: string;
+
+  /** Фрагмент исходной расшифровки, подтверждающий ответ. */
+  evidence: string;
+
+  /** Версия после редакторской обработки. */
+  editedQuestion: string;
+  editedAnswer: string;
+
+  /** Совместимость со старым кодом. */
+  question: string;
+  answer: string;
+
+  title: string;
+  sections: string[];
+  tags: string[];
+  comment: string;
+
+  /** Требуется ли ручная проверка. */
+  reviewStatus: "pending" | "review" | "ready";
+  reviewReasons: string[];
+}
+
+export interface FaqItem {
+  id: string;
+
+  title: string;
+
+  /** Рабочая версия для отображения в FAQ. */
+  question: string;
+  answer: string;
+
+  /** Исходные данные — не перезаписываются редактурой. */
+  originalQuestion?: string;
+  originalAnswer?: string;
+
+  /** Отредактированная версия. */
+  editedQuestion?: string;
+  editedAnswer?: string;
+
+  /** Подтверждающий фрагмент расшифровки. */
+  evidence?: string;
+
+  /** Статус проверки и причины сомнений. */
+  reviewStatus?: "pending" | "review" | "ready";
+  reviewReasons?: string[];
+
+  comment: string;
+
+  sourceQuestions: SourceQuestion[];
+
+  sections: string[];
+
+  tags: string[];
+
+  sources: FaqSource[];
+
+  updatedAt: string;
+}
+
 export interface FaqFile {
   version: number;
   updatedAt: string | null;
   items: FaqItem[];
 }
 
-/**
- * Информация об уже обработанной расшифровке.
- */
 export interface ProcessedFile {
   hash: string;
   processedAt: string;
   itemCount: number;
 }
 
-/**
- * Хранилище информации об обработанных файлах.
- */
 export interface ProcessedFileStore {
   version: number;
   files: Record<string, ProcessedFile>;

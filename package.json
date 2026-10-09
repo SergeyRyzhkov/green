@@ -10,7 +10,16 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write --unsafe .",
     "format": "biome format --write .",
-    "check": "npm run typecheck && npm run lint"
+    "check": "npm run typecheck && npm run lint",
+    "maintenance": "tsx src/maintenance.ts",
+    "faq:check": "tsx src/maintenance.ts check",
+    "faq:stats": "tsx src/maintenance.ts stats",
+    "faq:check-tags": "tsx src/maintenance.ts check-tags",
+    "faq:check-evidence": "tsx src/maintenance.ts check-evidence",
+    "faq:retag": "tsx src/maintenance.ts retag",
+    "faq:clean-tags": "tsx src/maintenance.ts clean-tags",
+    "faq:backup": "tsx src/maintenance.ts backup",
+    "faq:evidence": "tsx src/maintenance.ts evidence"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
