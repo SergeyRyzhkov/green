@@ -1,14 +1,16 @@
-import type { AiComparison, ExtractedFaqItem, ExtractedQaItem, Section } from "./types";
+import type {
+  AiComparison,
+  ExtractedFaqItem,
+  ExtractedQaItem,
+  Section,
+} from "./types";
 
 const MODEL = process.env.OPENAI_MODEL ?? "qwen3.5:4b";
-
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/api/chat";
-
 const MAX_CHUNK_CHARS = 3500;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
 const REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
-
 interface OllamaResponse {
   message?: {
     content?: string;
@@ -16,47 +18,35 @@ interface OllamaResponse {
   done?: boolean;
   done_reason?: string;
 }
-
 interface EditedQa {
   question: string;
   answer: string;
 }
-
 interface Classification {
   title: string;
   sections: string[];
   tags: string[];
   comment: string;
 }
-
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
 const splitText = (text: string, maxChars: number): string[] => {
   const chunks: string[] = [];
   let current = "";
-
   const blocks = text.split(/\n(?=\[\d{2}:\d{2}\])/);
-
   for (const block of blocks) {
     if (!block.trim()) continue;
-
     if (current.length > 0 && current.length + block.length + 1 > maxChars) {
       chunks.push(current.trim());
       current = "";
     }
-
     current += `${block}\n`;
   }
-
   if (current.trim()) chunks.push(current.trim());
-
   return chunks;
 };
-
 const normalizeWhitespace = (value: string): string =>
   value.replace(/\s+/g, " ").trim();
-
 const extractJson = (content: string): unknown => {
   const cleaned = content
     .trim()
@@ -64,21 +54,17 @@ const extractJson = (content: string): unknown => {
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-
   try {
     return JSON.parse(cleaned);
   } catch {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
-
     if (start >= 0 && end > start) {
       return JSON.parse(cleaned.slice(start, end + 1));
     }
-
     throw new Error("Не удалось найти JSON в ответе Ollama");
   }
 };
-
 const parseModelJson = (content: string, stage: string): unknown => {
   try {
     return extractJson(content);
@@ -90,16 +76,13 @@ const parseModelJson = (content: string, stage: string): unknown => {
     throw error;
   }
 };
-
 const ollamaChat = async (
   system: string,
   user: string,
   maxTokens: number,
 ): Promise<string> => {
   const controller = new AbortController();
-
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
   try {
     const response = await fetch(OLLAMA_URL, {
       method: "POST",
@@ -123,37 +106,30 @@ const ollamaChat = async (
       }),
       signal: controller.signal,
     });
-
     if (!response.ok) {
       throw new Error(
         `Ollama HTTP ${response.status}: ${await response.text()}`,
       );
     }
-
     const data = (await response.json()) as OllamaResponse;
     const content = data.message?.content?.trim();
-
     if (!content) {
       throw new Error(
         `Пустой ответ Ollama (done_reason=${data.done_reason ?? "unknown"})`,
       );
     }
-
     if (data.done === false || data.done_reason === "length") {
       console.warn(
         `    Ollama: ответ мог быть обрезан лимитом ${maxTokens} токенов`,
       );
     }
-
     return content;
   } finally {
     clearTimeout(timeout);
   }
 };
-
 const isRealQuestion = (question: string): boolean => {
   const value = question.trim();
-
   return (
     value.length >= 8 &&
     (value.includes("?") ||
@@ -162,49 +138,35 @@ const isRealQuestion = (question: string): boolean => {
       ))
   );
 };
-
 const isBadAnswer = (answer: string): boolean => {
   const value = answer.trim();
-
   if (value.length < 20) {
     return true;
   }
-
   return /^(нет ответа|ответ отсутствует|текста нет|не указано|не дано|не могу определить|спикер не указал|спикер не дал|вопрос не реш[её]н|автор не ответил|ответ не прозвучал)/i.test(
     value,
   );
 };
-
 const parseQaItems = (data: unknown, chunk: string): ExtractedQaItem[] => {
   if (!data || typeof data !== "object") return [];
-
   const items = (data as { items?: unknown }).items;
-
   if (!Array.isArray(items)) return [];
-
   const result: ExtractedQaItem[] = [];
-
   for (const raw of items) {
     if (!raw || typeof raw !== "object") continue;
-
     const item = raw as {
       sourceQuestion?: unknown;
       question?: unknown;
       answer?: unknown;
       evidence?: unknown;
     };
-
     const sourceQuestion =
       typeof item.sourceQuestion === "string" ? item.sourceQuestion.trim() : "";
-
     const question =
       typeof item.question === "string" ? item.question.trim() : "";
-
     const answer = typeof item.answer === "string" ? item.answer.trim() : "";
-
     const proposedEvidence =
       typeof item.evidence === "string" ? item.evidence.trim() : "";
-
     if (
       !sourceQuestion ||
       !question ||
@@ -214,7 +176,6 @@ const parseQaItems = (data: unknown, chunk: string): ExtractedQaItem[] => {
     ) {
       continue;
     }
-
     // Цитата считается подтверждённой только при совпадении
     // с реальным фрагментом текущей расшифровки.
     const evidenceMatches =
@@ -222,7 +183,6 @@ const parseQaItems = (data: unknown, chunk: string): ExtractedQaItem[] => {
       normalizeWhitespace(chunk).includes(
         normalizeWhitespace(proposedEvidence),
       );
-
     result.push({
       sourceQuestion,
       question,
@@ -231,17 +191,14 @@ const parseQaItems = (data: unknown, chunk: string): ExtractedQaItem[] => {
       evidence: evidenceMatches ? proposedEvidence : "",
     });
   }
-
   return result;
 };
-
 /**
  * ЭТАП 1. Извлечение вопроса, ответа и точной цитаты.
  */
 const extractQaChunk = async (chunk: string): Promise<ExtractedQaItem[]> => {
   const system = `
 Извлеки из расшифровки только реальные вопросы и ответы автора.
-
 Правила:
 - Не превращай обычные утверждения в вопросы.
 - Не придумывай вопрос, если его нет в расшифровке.
@@ -255,7 +212,6 @@ const extractQaChunk = async (chunk: string): Promise<ExtractedQaItem[]> => {
   который подтверждает ответ. Не исправляй в нём ошибки распознавания.
 - evidence должен быть скопирован из текста, а не пересказан.
 - Не включай комментарии, догадки и советы от себя.
-
 Верни JSON:
 {
   "items": [
@@ -267,13 +223,10 @@ const extractQaChunk = async (chunk: string): Promise<ExtractedQaItem[]> => {
     }
   ]
 }
-
 Если подходящих пар нет: {"items":[]}
 `.trim();
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`    Извлечение: попытка ${attempt}/${MAX_RETRIES}`);
-
     try {
       const content = await ollamaChat(system, chunk, 2500);
       return parseQaItems(parseModelJson(content, "Извлечение"), chunk);
@@ -283,16 +236,13 @@ const extractQaChunk = async (chunk: string): Promise<ExtractedQaItem[]> => {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_DELAY_MS);
       }
     }
   }
-
   throw new Error("Извлечение: все попытки завершились ошибкой");
 };
-
 /**
  * ЭТАП 2. Редактура.
  * Исходные question и answer никогда не перезаписываются.
@@ -300,10 +250,8 @@ const extractQaChunk = async (chunk: string): Promise<ExtractedQaItem[]> => {
 const editQa = async (item: ExtractedQaItem): Promise<EditedQa> => {
   const system = `
 Ты редактор расшифровки строительного видео.
-
 Исправь только очевидные ошибки распознавания речи,
 опечатки и пунктуацию.
-
 Критически важные правила:
 - Не добавляй новые факты, цифры, материалы и рекомендации.
 - Не делай ответ технически более подробным.
@@ -313,14 +261,12 @@ const editQa = async (item: ExtractedQaItem): Promise<EditedQa> => {
 - Не меняй смысл и степень уверенности автора.
 - Если исправление спорное, предпочти исходный текст.
 - Не добавляй объяснения от себя.
-
 Верни только JSON:
 {
   "question": "отредактированный вопрос",
   "answer": "отредактированный ответ"
 }
 `.trim();
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const content = await ollamaChat(
@@ -328,28 +274,21 @@ const editQa = async (item: ExtractedQaItem): Promise<EditedQa> => {
         `ВОПРОС:\n${item.question}\n\nОТВЕТ:\n${item.answer}`,
         1200,
       );
-
       const data = parseModelJson(content, "Редактура");
-
       if (!data || typeof data !== "object") {
         throw new Error("Некорректный результат редактуры");
       }
-
       const value = data as {
         question?: unknown;
         answer?: unknown;
       };
-
       const question =
         typeof value.question === "string" ? value.question.trim() : "";
-
       const answer =
         typeof value.answer === "string" ? value.answer.trim() : "";
-
       if (!question || !answer) {
         throw new Error("Редактура вернула пустой вопрос или ответ");
       }
-
       return { question, answer };
     } catch (error) {
       console.error(
@@ -357,20 +296,17 @@ const editQa = async (item: ExtractedQaItem): Promise<EditedQa> => {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_DELAY_MS);
       }
     }
   }
-
   // При ошибке редактуры безопаснее оставить исходный текст.
   return {
     question: item.question,
     answer: item.answer,
   };
 };
-
 /**
  * ЭТАП 3. Заголовок, классификация и отдельный комментарий.
  */
@@ -383,22 +319,16 @@ const classifyQa = async (
   const sectionList = sections
     .map((section) => `${section.id}: ${section.name}`)
     .join("\n");
-
   const tagList = allowedTags.join("\n");
-
   const system = `
 Ты классификатор строительной базы знаний.
-
 Создай короткий заголовок, выбери разделы и существующие теги,
 а также напиши отдельный комментарий ChatGPT, если он действительно
 полезен и не требует неподтверждённых предположений.
-
 РАЗДЕЛЫ — используй только эти ID:
 ${sectionList}
-
 РАЗРЕШЁННЫЕ ТЕГИ — используй только значения из списка:
 ${tagList || "(список пуст)"}
-
 Правила:
 - Не придумывай новые ID разделов и новые теги.
 - Не выбирай раздел только потому, что он в целом относится к строительству.
@@ -409,7 +339,6 @@ ${tagList || "(список пуст)"}
 - Если полезный комментарий невозможен без догадок, верни пустую строку.
 - Если подходящего раздела или тега нет, верни пустой массив.
 - Комментарий — мнение/пояснение ИИ, а не слова автора.
-
 Верни только JSON:
 {
   "title": "Краткий заголовок",
@@ -418,7 +347,6 @@ ${tagList || "(список пуст)"}
   "comment": ""
 }
 `.trim();
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const content = await ollamaChat(
@@ -426,33 +354,26 @@ ${tagList || "(список пуст)"}
         `ВОПРОС:\n${question}\n\nОТВЕТ:\n${answer}`,
         1200,
       );
-
       const data = parseModelJson(content, "Классификация");
-
       if (!data || typeof data !== "object") {
         throw new Error("Некорректный результат классификации");
       }
-
       const value = data as {
         title?: unknown;
         sections?: unknown;
         tags?: unknown;
         comment?: unknown;
       };
-
       const validSectionIds = new Set(sections.map((section) => section.id));
-
       const validTags = new Set(
         allowedTags.map((tag) => tag.toLocaleLowerCase("ru")),
       );
-
       const resultSections = Array.isArray(value.sections)
         ? value.sections.filter(
             (id): id is string =>
               typeof id === "string" && validSectionIds.has(id),
           )
         : [];
-
       const resultTags = Array.isArray(value.tags)
         ? value.tags.filter(
             (tag): tag is string =>
@@ -460,7 +381,6 @@ ${tagList || "(список пуст)"}
               validTags.has(tag.toLocaleLowerCase("ru")),
           )
         : [];
-
       return {
         title:
           typeof value.title === "string" && value.title.trim()
@@ -476,13 +396,11 @@ ${tagList || "(список пуст)"}
           error instanceof Error ? error.message : String(error)
         }`,
       );
-
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_DELAY_MS);
       }
     }
   }
-
   // Ошибка классификации не должна уничтожать найденный ответ.
   return {
     title: question,
@@ -494,39 +412,26 @@ ${tagList || "(список пуст)"}
 
 export const extractFaq = async (
   text: string,
-  _prompt: string,
   sectionsFile: { sections: Section[] },
   tagsFile: { tags: string[] },
 ): Promise<ExtractedFaqItem[]> => {
   const chunks = splitText(text, MAX_CHUNK_CHARS);
-
   console.log(`  Этап 1 — извлечение: ${chunks.length} фрагментов`);
-
   const extracted: ExtractedQaItem[] = [];
-
   for (let index = 0; index < chunks.length; index++) {
     console.log(
       `  Извлечение: ${index + 1}/${chunks.length} (${chunks[index].length} символов)`,
     );
-
     const items = await extractQaChunk(chunks[index]);
-
     console.log(`  Найдено Q&A: ${items.length}`);
-
     extracted.push(...items);
   }
-
   console.log(`  Всего извлечено: ${extracted.length}`);
-
   const result: ExtractedFaqItem[] = [];
-
   for (let index = 0; index < extracted.length; index++) {
     const item = extracted[index];
-
     console.log(`  Этапы 2–3: ${index + 1}/${extracted.length}`);
-
     const edited = await editQa(item);
-
     const classification = await classifyQa(
       edited.question,
       edited.answer,
@@ -534,17 +439,58 @@ export const extractFaq = async (
       tagsFile.tags,
     );
 
+    // classifyQa выбирает теги только из существующего словаря.
+    // Дополнительно генерируем тематические теги, в том числе новые.
+    let generatedTags: string[] = [];
+    try {
+      generatedTags = await classifyFaqTags(
+        edited.question,
+        edited.answer,
+        sectionsFile.sections,
+        tagsFile.tags,
+      );
+    } catch (error) {
+      console.warn(
+        `      Не удалось сгенерировать теги: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    // Для существующих тегов сохраняем каноническое написание из словаря.
+    const existingTagsByLower = new Map(
+      tagsFile.tags.map((tag) => [tag.toLocaleLowerCase("ru"), tag]),
+    );
+
+    // Объединяем теги классификации и генерации без дубликатов,
+    // в том числе если различается регистр или лишние пробелы.
+    const tagsByKey = new Map<string, string>();
+
+    for (const rawTag of [...classification.tags, ...generatedTags]) {
+      const tag = rawTag.trim().replace(/\s+/g, " ");
+      if (!tag) continue;
+
+      const key = tag.toLocaleLowerCase("ru");
+      const canonicalTag = existingTagsByLower.get(key) ?? tag;
+
+      if (!tagsByKey.has(key)) {
+        tagsByKey.set(key, canonicalTag);
+      }
+    }
+
+    const tags = [...tagsByKey.values()];
+    console.log(`      Теги: ${tags.length ? tags.join(", ") : "не найдены"}`);
+
     const aiAnswer = await generateAiAnswer(edited.question, edited.answer);
-    const aiComparison = await compareAnswers(edited.question, edited.answer, aiAnswer);
-
+    const aiComparison = await compareAnswers(
+      edited.question,
+      edited.answer,
+      aiAnswer,
+    );
     const reviewReasons: string[] = [];
-
     if (!item.evidence) {
       reviewReasons.push(
         "Не удалось подтвердить цитату точным фрагментом расшифровки",
       );
     }
-
     // Любое изменение ответа требует проверки человеком.
     // Это консервативная проверка: она не доказывает ошибку,
     // а помогает не принять редактуру за слова автора.
@@ -553,7 +499,6 @@ export const extractFaq = async (
     ) {
       reviewReasons.push("Ответ изменён при редактуре — сравнить с оригиналом");
     }
-
     if (
       normalizeWhitespace(edited.question) !==
       normalizeWhitespace(item.question)
@@ -562,40 +507,31 @@ export const extractFaq = async (
         "Вопрос изменён при редактуре — проверить формулировку",
       );
     }
-
     if (!classification.sections.length) {
       reviewReasons.push("Не назначен раздел");
     }
-
     result.push({
       sourceQuestion: item.sourceQuestion,
-
       originalQuestion: item.question,
       originalAnswer: item.answer,
       evidence: item.evidence,
-
       editedQuestion: edited.question,
       editedAnswer: edited.answer,
-
       // Для существующего кода отображения и merge.
       question: edited.question,
       answer: edited.answer,
       aiAnswer,
       aiComparison,
-
       title: classification.title,
       sections: classification.sections,
-      tags: classification.tags,
+      tags,
       comment: classification.comment,
-
       reviewStatus: reviewReasons.length ? "review" : "ready",
       reviewReasons,
     });
   }
-
   return result;
 };
-
 /**
  * Генерирует независимый ответ ИИ отдельно от ответа автора.
  * Он может дополнять тему, но не должен приписываться автору расшифровки.
@@ -607,7 +543,6 @@ export const generateAiAnswer = async (
   const system = `
 Ты независимый эксперт-помощник по строительству и инженерным системам.
 Сформируй самостоятельный ответ на вопрос, отдельно от мнения автора видео.
-
 Правила:
 - Ответ автора дан только для контекста; не выдавай его слова за собственное подтверждение.
 - Дай полезный, понятный и практичный ответ на сам вопрос.
@@ -618,10 +553,8 @@ export const generateAiAnswer = async (
 - Если достоверно ответить нельзя, честно обозначь неопределённость и перечисли, каких данных не хватает.
 - Не упоминай, что ты автор видео. Не смешивай независимую оценку с ответом автора.
 - Пиши по-русски, содержательно, без вступления и повторения вопроса.
-
 Верни только JSON: {"aiAnswer":"независимый ответ ИИ"}.
 `.trim();
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const content = await ollamaChat(
@@ -634,7 +567,8 @@ export const generateAiAnswer = async (
         throw new Error("Некорректный результат генерации aiAnswer");
       }
       const value = data as { aiAnswer?: unknown };
-      const answer = typeof value.aiAnswer === "string" ? value.aiAnswer.trim() : "";
+      const answer =
+        typeof value.aiAnswer === "string" ? value.aiAnswer.trim() : "";
       if (answer.length < 20) {
         throw new Error("ИИ вернул пустой или слишком короткий aiAnswer");
       }
@@ -646,10 +580,8 @@ export const generateAiAnswer = async (
       if (attempt < MAX_RETRIES) await sleep(RETRY_DELAY_MS);
     }
   }
-
   throw new Error(`Не удалось сгенерировать aiAnswer для вопроса: ${question}`);
 };
-
 /**
  * Сравнивает смысл ответа автора и независимого ответа ИИ.
  * Процент — приблизительная оценка семантического совпадения моделью,
@@ -673,29 +605,39 @@ agreementPercent — ориентировочная оценка доли смы
 Если автор ответил очень кратко, а ИИ добавил подробности без противоречия, выбирай partially_agree и не занижай процент только за объём.
 Верни только JSON: {"status":"agree|partially_agree|disagree|not_comparable","agreementPercent":0,"summary":"краткое объяснение по-русски"}.
 `.trim();
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const content = await ollamaChat(
         system,
         `ВОПРОС:
 ${question}
-
 ОТВЕТ АВТОРА:
 ${authorAnswer}
-
 НЕЗАВИСИМЫЙ ОТВЕТ ИИ:
 ${aiAnswer}`,
         700,
       );
-      const data = parseModelJson(content, "Сравнение ответов") as Record<string, unknown>;
-      const statuses = ["agree", "partially_agree", "disagree", "not_comparable"];
+      const data = parseModelJson(content, "Сравнение ответов") as Record<
+        string,
+        unknown
+      >;
+      const statuses = [
+        "agree",
+        "partially_agree",
+        "disagree",
+        "not_comparable",
+      ];
       const status = data.status;
       const percent = Number(data.agreementPercent);
-      const summary = typeof data.summary === "string" ? data.summary.trim() : "";
+      const summary =
+        typeof data.summary === "string" ? data.summary.trim() : "";
       if (
-        typeof status !== "string" || !statuses.includes(status) ||
-        !Number.isFinite(percent) || percent < 0 || percent > 100 || !summary
+        typeof status !== "string" ||
+        !statuses.includes(status) ||
+        !Number.isFinite(percent) ||
+        percent < 0 ||
+        percent > 100 ||
+        !summary
       ) {
         throw new Error("Некорректный результат сравнения ответов");
       }
@@ -705,13 +647,14 @@ ${aiAnswer}`,
         summary,
       };
     } catch (error) {
-      console.error(`      Ошибка сравнения ответов (${attempt}/${MAX_RETRIES}): ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `      Ошибка сравнения ответов (${attempt}/${MAX_RETRIES}): ${error instanceof Error ? error.message : String(error)}`,
+      );
       if (attempt < MAX_RETRIES) await sleep(RETRY_DELAY_MS);
     }
   }
   throw new Error(`Не удалось сравнить ответы для вопроса: ${question}`);
 };
-
 /**
  * Генерирует тематические теги для одного FAQ.
  * Существующие теги служат словарём предпочтительных названий,
@@ -726,22 +669,16 @@ export const classifyFaqTags = async (
   const sectionList = sections
     .map((section) => `${section.id}: ${section.name}`)
     .join("\n");
-
   const tagList = existingTags.length
     ? existingTags.join("\n")
     : "(словарь пока пуст)";
-
   const system = `
 Ты редактор тегов для строительной базы знаний.
-
 Подбери от 2 до 5 коротких тематических тегов для FAQ.
-
 СУЩЕСТВУЮЩИЕ ТЕГИ:
 ${tagList}
-
 РАЗДЕЛЫ БАЗЫ:
 ${sectionList || "(список разделов пуст)"}
-
 Правила:
 - Теги описывают конкретную тему вопроса и ответа.
 - Предпочитай существующий тег, если он точно подходит по смыслу.
@@ -755,29 +692,22 @@ ${sectionList || "(список разделов пуст)"}
 - Не путай разделы с тегами: тег должен обозначать тему, материал,
   конструкцию, оборудование или технологию.
 - Не добавляй пояснений.
-
 Верни только JSON:
 {"tags":["тег 1","тег 2"]}
 `.trim();
-
   const content = await ollamaChat(
     system,
     `ВОПРОС:\n${question}\n\nОТВЕТ:\n${answer}`,
     500,
   );
-
   const data = parseModelJson(content, "Генерация тегов");
-
   if (!data || typeof data !== "object") {
     throw new Error("Генерация тегов вернула некорректный объект");
   }
-
   const value = data as { tags?: unknown };
-
   if (!Array.isArray(value.tags)) {
     throw new Error("Генерация тегов не вернула массив tags");
   }
-
   const result = value.tags
     .filter((tag): tag is string => typeof tag === "string")
     .map((tag) => tag.trim().replace(/^#+/, "").replace(/\s+/g, " "))
@@ -785,10 +715,8 @@ ${sectionList || "(список разделов пуст)"}
     .filter(
       (tag) => !/^(вопрос|ответ|прочее|разное|строительство)$/i.test(tag),
     );
-
   return [...new Set(result)];
 };
-
 export const recoverEvidenceQuote = async (
   question: string,
   answer: string,
@@ -798,7 +726,6 @@ export const recoverEvidenceQuote = async (
 Ты редактор строительной базы знаний.
 Найди в предоставленных фрагментах дословную цитату,
 которая подтверждает ответ на вопрос.
-
 Правила:
 - Используй только текст предоставленных фрагментов.
 - Не придумывай факты и не исправляй исходный текст.
@@ -806,7 +733,6 @@ export const recoverEvidenceQuote = async (
 - Если подтверждения нет, верни пустую строку.
 - Верни только JSON: {"evidence":"дословная цитата"}
 `.trim();
-
   const content = await ollamaChat(
     system,
     [
@@ -816,18 +742,13 @@ export const recoverEvidenceQuote = async (
     ].join("\n\n"),
     500,
   );
-
   const data = parseModelJson(content, "Восстановление цитаты");
-
   if (!data || typeof data !== "object") {
     throw new Error("Восстановление цитаты вернуло некорректный объект");
   }
-
   const evidence = (data as { evidence?: unknown }).evidence;
-
   if (typeof evidence !== "string") {
     throw new Error("Модель не вернула строковое поле evidence");
   }
-
   return evidence.trim();
 };

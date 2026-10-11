@@ -2,7 +2,6 @@ import "dotenv/config";
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-
 import { classifyFaqTags, compareAnswers, generateAiAnswer } from "./ai";
 import { sha256 } from "./hash";
 import { backup, readJson, writeJson } from "./io";
@@ -49,36 +48,63 @@ const main = async (): Promise<void> => {
   });
 
   // Генерация независимого AI-ответа для уже сохранённых FAQ, где его ещё нет.
+  // Генерация независимого AI-ответа для FAQ, где его ещё нет.
   if (process.argv.includes("--ai-answers")) {
     const missing = faq.items.filter((item) => !item.aiAnswer?.trim());
-    console.log(`Генерация независимых AI-ответов: ${missing.length} из ${faq.items.length}`);
+
+    console.log(
+      `Генерация независимых AI-ответов: ${missing.length} из ${faq.items.length}`,
+    );
 
     for (let index = 0; index < missing.length; index++) {
       const item = missing[index];
+
       console.log(`[${index + 1}/${missing.length}] ${item.question}`);
+
       item.aiAnswer = await generateAiAnswer(item.question, item.answer);
-      item.aiComparison = await compareAnswers(item.question, item.answer, item.aiAnswer);
-      console.log(`  ${item.aiComparison.status}: ${item.aiComparison.agreementPercent}%`);
+
+      // Сравниваем исходный ответ и независимое мнение AI.
+      item.aiComparison = await compareAnswers(
+        item.question,
+        item.answer,
+        item.aiAnswer,
+      );
+
+      console.log(
+        `  ${item.aiComparison.status}: ${item.aiComparison.agreementPercent}% — ${item.aiComparison.summary}`,
+      );
     }
 
     faq.updatedAt = new Date().toISOString();
+
     validateFaq(faq, sections, tags);
+
     await backup(faqPath);
     await writeJson(faqPath, faq);
+
     console.log(`Готово. AI-ответов добавлено: ${missing.length}`);
+
     return;
   }
 
   // Повторный расчёт смыслового совпадения для сохранённых ответов.
   if (process.argv.includes("--ai-compare")) {
-    const comparable = faq.items.filter((item) => item.answer?.trim() && item.aiAnswer?.trim());
+    const comparable = faq.items.filter(
+      (item) => item.answer?.trim() && item.aiAnswer?.trim(),
+    );
     console.log(`Сравнение ответов автора и ИИ: ${comparable.length} FAQ`);
 
     for (let index = 0; index < comparable.length; index++) {
       const item = comparable[index];
       console.log(`[${index + 1}/${comparable.length}] ${item.question}`);
-      item.aiComparison = await compareAnswers(item.question, item.answer, item.aiAnswer!);
-      console.log(`  ${item.aiComparison.status}: ${item.aiComparison.agreementPercent}% — ${item.aiComparison.summary}`);
+      item.aiComparison = await compareAnswers(
+        item.question,
+        item.answer,
+        item.aiAnswer!,
+      );
+      console.log(
+        `  ${item.aiComparison.status}: ${item.aiComparison.agreementPercent}% — ${item.aiComparison.summary}`,
+      );
     }
 
     faq.updatedAt = new Date().toISOString();
@@ -125,9 +151,6 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  const promptFile = path.join(ROOT, "prompts", "extract-faq.md");
-  const prompt = await readFile(promptFile, "utf8");
-
   const files = (await readdir(transcriptsDir))
     .filter((file) => file.toLowerCase().endsWith(".txt"))
     .sort();
@@ -152,7 +175,6 @@ const main = async (): Promise<void> => {
 
     const extracted = await (await import("./ai")).extractFaq(
       text,
-      prompt,
       sections,
       tags,
     );
