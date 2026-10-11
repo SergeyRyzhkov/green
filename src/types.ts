@@ -82,9 +82,10 @@ export interface FaqSource {
   url?: string;
 }
 
-export interface SourceQuestion {
+export interface RelatedQuestion {
+  id: string;
   file: string;
-  question?: string;
+  question: string;
 }
 
 /** Результат извлечения из расшифровки. */
@@ -114,6 +115,10 @@ export interface ExtractedFaqItem {
   question: string;
   answer: string;
 
+  /** Независимое дополнение от ИИ, не слова автора. */
+  aiAnswer: string;
+  aiComparison?: AiComparison;
+
   title: string;
   sections: string[];
   tags: string[];
@@ -124,6 +129,15 @@ export interface ExtractedFaqItem {
   reviewReasons: string[];
 }
 
+export interface AiComparison {
+  /** Смысловое отношение независимого ответа ИИ к ответу автора. */
+  status: "agree" | "partially_agree" | "disagree" | "not_comparable";
+  /** Оценка смыслового совпадения моделью, не вероятность истинности. */
+  agreementPercent: number;
+  /** Краткое объяснение расхождений или совпадений. */
+  summary: string;
+}
+
 export interface FaqItem {
   id: string;
 
@@ -132,6 +146,12 @@ export interface FaqItem {
   /** Рабочая версия для отображения в FAQ. */
   question: string;
   answer: string;
+
+  /** Независимое дополнение от ИИ, отдельно от ответа автора. */
+  aiAnswer?: string;
+
+  /** Оценка смыслового совпадения aiAnswer с ответом автора. */
+  aiComparison?: AiComparison;
 
   /** Исходные данные — не перезаписываются редактурой. */
   originalQuestion?: string;
@@ -150,7 +170,7 @@ export interface FaqItem {
 
   comment: string;
 
-  sourceQuestions: SourceQuestion[];
+  relatedQuestions: RelatedQuestion[];
 
   sections: string[];
 

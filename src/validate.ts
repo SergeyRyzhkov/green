@@ -40,7 +40,7 @@ function checkItems(items: FaqItem[]): void {
     "id",
     "question",
     "answer",
-    "sourceQuestions",
+    "relatedQuestions",
     "sections",
     "tags",
   ];
@@ -70,8 +70,29 @@ function checkItems(items: FaqItem[]): void {
       throw new Error(`FAQ #${number}: пустой answer`);
     }
 
-    if (!Array.isArray(item.sourceQuestions)) {
-      throw new Error(`FAQ #${number}: sourceQuestions не массив`);
+    if (item.aiAnswer !== undefined && typeof item.aiAnswer !== "string") {
+      throw new Error(`FAQ #${number}: aiAnswer должен быть строкой`);
+    }
+
+    if (item.aiComparison !== undefined) {
+      const comparison = item.aiComparison;
+      const statuses = ["agree", "partially_agree", "disagree", "not_comparable"];
+      if (!comparison || typeof comparison !== "object") {
+        throw new Error(`FAQ #${number}: aiComparison должен быть объектом`);
+      }
+      if (!statuses.includes(comparison.status)) {
+        throw new Error(`FAQ #${number}: некорректный aiComparison.status`);
+      }
+      if (!Number.isInteger(comparison.agreementPercent) || comparison.agreementPercent < 0 || comparison.agreementPercent > 100) {
+        throw new Error(`FAQ #${number}: aiComparison.agreementPercent должен быть целым числом от 0 до 100`);
+      }
+      if (typeof comparison.summary !== "string" || !comparison.summary.trim()) {
+        throw new Error(`FAQ #${number}: отсутствует aiComparison.summary`);
+      }
+    }
+
+    if (!Array.isArray(item.relatedQuestions)) {
+      throw new Error(`FAQ #${number}: relatedQuestions не массив`);
     }
 
     if (!Array.isArray(item.sections)) {
@@ -82,8 +103,23 @@ function checkItems(items: FaqItem[]): void {
       throw new Error(`FAQ #${number}: tags не массив`);
     }
 
-    if (item.sourceQuestions.length === 0) {
-      console.warn(`⚠️ FAQ #${number}: нет источников`);
+    if (item.relatedQuestions.length === 0) {
+      console.warn(`⚠️ FAQ #${number}: нет связанных вопросов`);
+    }
+
+    for (const related of item.relatedQuestions) {
+      if (!related || typeof related !== "object") {
+        throw new Error(`FAQ #${number}: связанный вопрос не является объектом`);
+      }
+      if (typeof related.id !== "string" || !related.id.trim()) {
+        throw new Error(`FAQ #${number}: у связанного вопроса отсутствует id`);
+      }
+      if (typeof related.file !== "string" || !related.file.trim()) {
+        throw new Error(`FAQ #${number}: у связанного вопроса отсутствует file`);
+      }
+      if (typeof related.question !== "string" || !related.question.trim()) {
+        throw new Error(`FAQ #${number}: у связанного вопроса отсутствует question`);
+      }
     }
 
     if (item.sections.length === 0) {
@@ -247,21 +283,27 @@ function checkSources(items: FaqItem[]): void {
   let withoutSources = 0;
 
   for (const [index, item] of items.entries()) {
-    if (item.sourceQuestions.length === 0) {
+    if (item.relatedQuestions.length === 0) {
       withoutSources++;
     }
 
-    for (const source of item.sourceQuestions) {
-      if (!source.file?.trim()) {
-        throw new Error(`FAQ #${index + 1}: у источника отсутствует file`);
+    for (const related of item.relatedQuestions) {
+      if (!related.id?.trim()) {
+        throw new Error(`FAQ #${index + 1}: у связанного вопроса отсутствует id`);
+      }
+      if (!related.file?.trim()) {
+        throw new Error(`FAQ #${index + 1}: у связанного вопроса отсутствует file`);
+      }
+      if (!related.question?.trim()) {
+        throw new Error(`FAQ #${index + 1}: у связанного вопроса отсутствует question`);
       }
     }
   }
 
   if (withoutSources > 0) {
-    console.warn(`⚠️ Записей без источников: ${withoutSources}`);
+    console.warn(`⚠️ Записей без связанных вопросов: ${withoutSources}`);
   } else {
-    console.log("✓ У всех записей есть источники");
+    console.log("✓ У всех записей есть связанные вопросы");
   }
 }
 

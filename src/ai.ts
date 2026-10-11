@@ -1,4 +1,4 @@
-import type { ExtractedFaqItem, ExtractedQaItem, Section } from "./types";
+import type { AiComparison, ExtractedFaqItem, ExtractedQaItem, Section } from "./types";
 
 const MODEL = process.env.OPENAI_MODEL ?? "qwen3.5:4b";
 
@@ -534,6 +534,9 @@ export const extractFaq = async (
       tagsFile.tags,
     );
 
+    const aiAnswer = await generateAiAnswer(edited.question, edited.answer);
+    const aiComparison = await compareAnswers(edited.question, edited.answer, aiAnswer);
+
     const reviewReasons: string[] = [];
 
     if (!item.evidence) {
@@ -577,6 +580,8 @@ export const extractFaq = async (
       // Для существующего кода отображения и merge.
       question: edited.question,
       answer: edited.answer,
+      aiAnswer,
+      aiComparison,
 
       title: classification.title,
       sections: classification.sections,
@@ -589,6 +594,122 @@ export const extractFaq = async (
   }
 
   return result;
+};
+
+/**
+ * Генерирует независимый ответ ИИ отдельно от ответа автора.
+ * Он может дополнять тему, но не должен приписываться автору расшифровки.
+ */
+export const generateAiAnswer = async (
+  question: string,
+  authorAnswer: string,
+): Promise<string> => {
+  const system = `
+Ты независимый эксперт-помощник по строительству и инженерным системам.
+Сформируй самостоятельный ответ на вопрос, отдельно от мнения автора видео.
+
+Правила:
+- Ответ автора дан только для контекста; не выдавай его слова за собственное подтверждение.
+- Дай полезный, понятный и практичный ответ на сам вопрос.
+- Если автор ошибается или упускает важные условия, тактично укажи это.
+- Не выдумывай нормативы, точные цифры, ссылки на стандарты или результаты расчётов.
+- Если ответ зависит от региона, конструкции или исходных данных, явно назови это.
+- Для потенциально опасных решений (электрика, газ, несущие конструкции, пожарная безопасность) укажи необходимость проверки специалистом и применимых норм.
+- Если достоверно ответить нельзя, честно обозначь неопределённость и перечисли, каких данных не хватает.
+- Не упоминай, что ты автор видео. Не смешивай независимую оценку с ответом автора.
+- Пиши по-русски, содержательно, без вступления и повторения вопроса.
+
+Верни только JSON: {"aiAnswer":"независимый ответ ИИ"}.
+`.trim();
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const content = await ollamaChat(
+        system,
+        `ВОПРОС:\n${question}\n\nОТВЕТ АВТОРА (для контекста, не считать безусловно верным):\n${authorAnswer}`,
+        1800,
+      );
+      const data = parseModelJson(content, "Независимый ответ ИИ");
+      if (!data || typeof data !== "object") {
+        throw new Error("Некорректный результат генерации aiAnswer");
+      }
+      const value = data as { aiAnswer?: unknown };
+      const answer = typeof value.aiAnswer === "string" ? value.aiAnswer.trim() : "";
+      if (answer.length < 20) {
+        throw new Error("ИИ вернул пустой или слишком короткий aiAnswer");
+      }
+      return answer;
+    } catch (error) {
+      console.error(
+        `      Ошибка независимого ответа ИИ (${attempt}/${MAX_RETRIES}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      if (attempt < MAX_RETRIES) await sleep(RETRY_DELAY_MS);
+    }
+  }
+
+  throw new Error(`Не удалось сгенерировать aiAnswer для вопроса: ${question}`);
+};
+
+/**
+ * Сравнивает смысл ответа автора и независимого ответа ИИ.
+ * Процент — приблизительная оценка семантического совпадения моделью,
+ * а не вероятность того, что автор прав или что ответы истинны.
+ */
+export const compareAnswers = async (
+  question: string,
+  authorAnswer: string,
+  aiAnswer: string,
+): Promise<AiComparison> => {
+  const system = `
+Ты аналитик, сравнивающий два ответа на один вопрос.
+Сравни только смысл утверждений, рекомендации, условия и выводы.
+Не считай различие формулировок несогласием. Не принимай ответ ИИ за истину автоматически.
+agreementPercent — ориентировочная оценка доли смыслового совпадения от 0 до 100, а не оценка истинности.
+Статусы:
+- agree: ответы в основном согласуются, существенных противоречий нет;
+- partially_agree: есть общее ядро, но имеются значимые различия, дополнения или разные условия;
+- disagree: основные утверждения или рекомендации противоречат друг другу;
+- not_comparable: ответы слишком разные, неопределённые или недостаточны для содержательного сравнения.
+Если автор ответил очень кратко, а ИИ добавил подробности без противоречия, выбирай partially_agree и не занижай процент только за объём.
+Верни только JSON: {"status":"agree|partially_agree|disagree|not_comparable","agreementPercent":0,"summary":"краткое объяснение по-русски"}.
+`.trim();
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const content = await ollamaChat(
+        system,
+        `ВОПРОС:
+${question}
+
+ОТВЕТ АВТОРА:
+${authorAnswer}
+
+НЕЗАВИСИМЫЙ ОТВЕТ ИИ:
+${aiAnswer}`,
+        700,
+      );
+      const data = parseModelJson(content, "Сравнение ответов") as Record<string, unknown>;
+      const statuses = ["agree", "partially_agree", "disagree", "not_comparable"];
+      const status = data.status;
+      const percent = Number(data.agreementPercent);
+      const summary = typeof data.summary === "string" ? data.summary.trim() : "";
+      if (
+        typeof status !== "string" || !statuses.includes(status) ||
+        !Number.isFinite(percent) || percent < 0 || percent > 100 || !summary
+      ) {
+        throw new Error("Некорректный результат сравнения ответов");
+      }
+      return {
+        status: status as AiComparison["status"],
+        agreementPercent: Math.round(percent),
+        summary,
+      };
+    } catch (error) {
+      console.error(`      Ошибка сравнения ответов (${attempt}/${MAX_RETRIES}): ${error instanceof Error ? error.message : String(error)}`);
+      if (attempt < MAX_RETRIES) await sleep(RETRY_DELAY_MS);
+    }
+  }
+  throw new Error(`Не удалось сравнить ответы для вопроса: ${question}`);
 };
 
 /**

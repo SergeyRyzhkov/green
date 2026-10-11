@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import type {
   ExtractedFaqItem,
   FaqFile,
   FaqItem,
   FaqSource,
+  RelatedQuestion,
   SectionsFile,
   TagsFile,
 } from "./types";
@@ -56,17 +58,29 @@ const makeId = (question: string): string => {
   return `${slug}-${Math.abs(hash).toString(36)}`;
 };
 
-const createSourceQuestion = (source: FaqSource, question: string) => ({
-  file: source.file,
-  question: question.trim(),
-});
+const createRelatedQuestion = (
+  source: FaqSource,
+  question: string,
+): RelatedQuestion => {
+  const normalizedQuestion = question.trim();
+  const hash = createHash("sha256")
+    .update(`${source.file}\0${normalizedQuestion}`)
+    .digest("hex")
+    .slice(0, 16);
 
-const hasSourceQuestion = (
+  return {
+    id: `rq-${hash}`,
+    file: source.file,
+    question: normalizedQuestion,
+  };
+};
+
+const hasRelatedQuestion = (
   item: FaqItem,
   source: FaqSource,
   question: string,
 ): boolean =>
-  item.sourceQuestions.some(
+  item.relatedQuestions.some(
     (entry) => entry.file === source.file && entry.question === question.trim(),
   );
 
@@ -126,7 +140,7 @@ export const mergeFaq = (
     const existing = faq.items.find(
       (faqItem) =>
         similarity(faqItem.question, question) >= 0.82 ||
-        faqItem.sourceQuestions.some(
+        faqItem.relatedQuestions.some(
           (sourceQuestion) =>
             sourceQuestion.question &&
             similarity(sourceQuestion.question, item.sourceQuestion) >= 0.88,
@@ -140,6 +154,8 @@ export const mergeFaq = (
         title: item.title.trim() || question,
         question,
         answer,
+        aiAnswer: item.aiAnswer,
+        aiComparison: item.aiComparison,
 
         originalQuestion: item.originalQuestion,
         originalAnswer: item.originalAnswer,
@@ -152,7 +168,7 @@ export const mergeFaq = (
 
         comment: item.comment.trim(),
 
-        sourceQuestions: [createSourceQuestion(source, item.sourceQuestion)],
+        relatedQuestions: [createRelatedQuestion(source, item.sourceQuestion)],
 
         sections: unique(sectionIds),
         tags: unique(tags),
@@ -167,9 +183,19 @@ export const mergeFaq = (
 
     let changed = false;
 
-    if (!hasSourceQuestion(existing, source, item.sourceQuestion)) {
-      existing.sourceQuestions.push(
-        createSourceQuestion(source, item.sourceQuestion),
+    if (!existing.aiAnswer && item.aiAnswer) {
+      existing.aiAnswer = item.aiAnswer;
+      changed = true;
+    }
+
+    if (!existing.aiComparison && item.aiComparison) {
+      existing.aiComparison = item.aiComparison;
+      changed = true;
+    }
+
+    if (!hasRelatedQuestion(existing, source, item.sourceQuestion)) {
+      existing.relatedQuestions.push(
+        createRelatedQuestion(source, item.sourceQuestion),
       );
       changed = true;
     }

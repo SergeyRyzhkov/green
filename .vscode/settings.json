@@ -34,5 +34,5 @@
   "scss.validate": false, // Disable scss lint (optional if using scss)
   "editor.quickSuggestions": {
     "strings": true
-  },
+  }
 }

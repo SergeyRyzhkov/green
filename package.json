@@ -5,6 +5,9 @@
   "private": true,
   "scripts": {
     "process": "tsx src/process.ts",
+    "faq:finish": "npm run faq:ai-answers && npm run faq:ai-compare && npm run faq:check && npm run faq:check-tags && npm run faq:check-evidence && npm run faq:stats",
+    "faq:ai-answers": "tsx src/process.ts --ai-answers",
+    "faq:ai-compare": "tsx src/process.ts --ai-compare",
     "validate": "tsx src/validate.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",

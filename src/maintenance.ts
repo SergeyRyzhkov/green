@@ -238,7 +238,7 @@ async function recoverEvidence(): Promise<void> {
 
     const sources = [
       ...item.sources.map((source) => path.basename(source.file)),
-      ...item.sourceQuestions.map((source) => path.basename(source.file)),
+      ...item.relatedQuestions.map((source) => path.basename(source.file)),
     ];
 
     const files = [...new Set(sources)].filter((file) =>
