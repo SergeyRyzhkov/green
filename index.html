@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#263b2d">
+<title>Вопросы и ответы Глеба Гринфельда</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="header-row">
+      <button id="menuToggle" class="hamburger" type="button" aria-label="Открыть разделы" aria-expanded="false" title="Разделы">☰</button>
+      <a class="brand" href="https://tipa.house/" target="_blank" rel="noopener noreferrer">TIPA.HOUSE</a>
+      <div class="header-actions"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Включить тёмную тему" title="Тема оформления">☾</button></div>
+    </div>
+    <div class="hero-copy">
+      <p class="eyebrow">База знаний TIPA HOUSE</p>
+      <h1>Вопросы и ответы<br><span>Глеба Гринфельда</span></h1>
+      <p class="hero-description">Ответы на вопросы о строительстве, конструкциях и инженерных решениях.</p>
+      <a class="site-link" href="https://tipa.house/" target="_blank" rel="noopener noreferrer">Сайт Глеба Гринфельда <span aria-hidden="true">↗</span></a>
+    </div>
+    <div class="search-row"><input id="q" type="search" placeholder="Найти вопрос, ответ или тег…" aria-label="Поиск по FAQ"></div>
+  </div>
+</header>
+<main><section>
+  <details class="toc" id="toc"><summary>Оглавление разделов</summary><nav class="toc-nav" id="sectionNav"><span class="small">Загрузка разделов…</span></nav></details>
+  <div class="filter-state" id="filterState" hidden><span id="filterLabel"></span><button id="clearTag" type="button">Сбросить фильтр</button></div>
+  <div id="list"></div>
+</section></main>
+<footer>TIPA FAQ · база знаний · режим просмотра</footer>
+<div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true"><aside class="drawer" id="sectionDrawer" aria-label="Навигация по разделам"><div class="drawer-head"><h2>Разделы</h2><button id="closeDrawer" type="button" aria-label="Закрыть меню">✕</button></div><nav class="drawer-nav" id="mobileSectionNav"><span class="small">Загрузка разделов…</span></nav></aside></div>
+<script>
+const $=id=>document.getElementById(id);
+let items=[],sections={},selectedTag="";
+const labels={agree:"Совпадает",partially_agree:"Частично совпадает",disagree:"Не совпадает",not_comparable:"Нельзя сравнить"};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function secName(id){const s=sections[id];return s?.title||s?.name||s?.label||id}
+function aiAnswer(x){const candidates=[x.aiAnswer,x.independentAiAnswer,x.aiOpinion,x.ai?.answer,x.ai?.opinion,x.ai?.content,x.ai?.text];for(const value of candidates){if(typeof value==="string"&&value.trim())return value;if(value&&typeof value==="object"){for(const key of ["answer","opinion","text","content","value"]){if(typeof value[key]==="string"&&value[key].trim())return value[key]}}}return ""}
+function cmp(x){return x.aiComparison||x.aiComparisonResult||{}}
+function cmpStatus(x){return cmp(x).status||x.aiComparisonStatus||""}
+function pct(x){const c=cmp(x);return c.agreementPercent??c.matchPercent??x.aiAgreementPercent}
+function label(s){return labels[s]||s||"Нет сравнения"}
+function searchText(x){return [x.question,x.answer,aiAnswer(x),(x.tags||[]).join(" "),(x.sections||[]).map(secName).join(" ")].join(" ").toLowerCase()}
+function sectionAnchor(id){return "section-"+String(id).normalize("NFKD").replace(/[^a-zA-Z0-9_-]+/g,"-").replace(/^-+|-+$/g,"")}
+function setTag(tag){selectedTag=selectedTag===tag?"":tag;render()}
+function render(){
+  const q=$("q").value.trim().toLowerCase();
+  let list=items.filter(x=>(!q||searchText(x).includes(q))&&(!selectedTag||(x.tags||[]).includes(selectedTag)));
+  const state=$("filterState");state.hidden=!selectedTag;
+  $("filterLabel").textContent=selectedTag?`Фильтр по тегу: ${selectedTag}`:"";
+  if(!list.length){$("sectionNav").innerHTML='<span class="small">Нет разделов по текущему запросу.</span>';$("mobileSectionNav").innerHTML='<span class="small">Нет разделов по текущему запросу.</span>';$("list").innerHTML='<div class="empty">Ничего не найдено. Измените поисковый запрос или сбросьте фильтр по тэгу.</div>';return}
+  const groups=new Map();
+  for(const x of list){const ids=(x.sections||[]).filter(Boolean);const keys=ids.length?ids:["__none__"];for(const id of keys){if(!groups.has(id))groups.set(id,[]);groups.get(id).push(x)}}
+  const order=[...Object.keys(sections),...Array.from(groups.keys()).filter(id=>id!=="__none__"&&!Object.prototype.hasOwnProperty.call(sections,id)),"__none__"];
+  const active=order.filter(id=>groups.has(id));
+  const nav=active.map(id=>{const anchor=sectionAnchor(id);const title=id==="__none__"?"Без раздела":secName(id);return `<a href="#${anchor}" data-section-link="${esc(anchor)}">${esc(title)}<small>${groups.get(id).length}</small></a>`}).join("");
+  $("sectionNav").innerHTML=nav||'<span class="small">Нет разделов.</span>';
+  $("mobileSectionNav").innerHTML=nav||'<span class="small">Нет разделов.</span>';
+  const autoOpen=Boolean(q||selectedTag);
+  $("list").innerHTML=active.map(id=>{const anchor=sectionAnchor(id);const title=id==="__none__"?"Без раздела":secName(id);return `<details class="section-group" id="${anchor}"${autoOpen?" open":""}><summary class="section-heading">${esc(title)}<span class="count">${groups.get(id).length} FAQ</span></summary><div class="section-items">${groups.get(id).map(renderFaq).join("")}</div></details>`}).join("");
+}
+function renderFaq(x){
+  const a=aiAnswer(x),c=cmp(x),s=cmpStatus(x),p=pct(x);
+  const originalQuestion=typeof x.question==="string"&&x.question.length?x.question:"Вопрос не сохранён";
+  const originalAnswer=typeof x.answer==="string"?x.answer:"";
+  const tags=(x.tags||[]).map(t=>`<button type="button" class="pill tag-filter" data-tag="${esc(t)}" aria-pressed="${selectedTag===t?"true":"false"}" title="Показать FAQ с тегом: ${esc(t)}">${esc(t)}</button>`).join("");
+  const aiBlock=`<div class="answer-block ai-box"><h3>Независимое мнение ИИ</h3><p>${a?esc(a):'<span class="small">Ответ ИИ не сохранён в этой записи.</span>'}</p></div>`;
+  const statusClass=s==="agree"?"ready":s==="partially_agree"?"review":s==="disagree"?"error":"";
+  const compare=`<div class="answer-block"><h3>Сравнение с ответом автора</h3><div class="tags"><span class="pill ${statusClass}">${esc(label(s))}</span>${p!==undefined&&p!==null?`<span class="pill">Совпадение: ${esc(p)}%</span>`:""}</div>${c.summary?`<p style="margin-top:8px">${esc(c.summary)}</p>`:""}${c.details?`<p style="margin-top:7px">${esc(c.details)}</p>`:""}${!s?'<p class="small" style="margin-top:7px">Сравнение ещё не выполнено или результат не сохранён.</p>':""}</div>`;
+  const related=(x.relatedIds||[]).map(id=>items.find(item=>item.id===id)?.question).filter(Boolean);
+  const relatedHtml=related.length?`<div><h3 class="detail-heading">Связанные вопросы</h3><ul>${related.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></div>`:"";
+  const comment="";
+  return `<details class="faq"><summary class="faq-head"><div class="title">${esc(originalQuestion)}</div>${tags?`<div class="tags">${tags}</div>`:""}</summary><div class="faq-body"><div class="answer-block"><h3>Ответ Глеба Грина</h3><p>${esc(originalAnswer)}</p></div>${aiBlock}${compare}${comment}${relatedHtml}</div></details>`;
+}
+function closeDrawer(){ $("drawerBackdrop").classList.remove("open");$("drawerBackdrop").setAttribute("aria-hidden","true");$("menuToggle").setAttribute("aria-expanded","false"); }
+function handleNavClick(e){const link=e.target.closest("a[data-section-link]");if(!link)return;e.preventDefault();const target=document.getElementById(link.dataset.sectionLink);closeDrawer();if(target){target.open=true;history.replaceState(null,"",`#${target.id}`);target.scrollIntoView({behavior:"smooth",block:"start"})}}
+async function init(){try{const [fr,sr]=await Promise.all([fetch("./data/faq.json"),fetch("./data/sections.json").catch(()=>null)]);if(!fr.ok)throw Error("Не удалось загрузить data/faq.json");const data=await fr.json();items=Array.isArray(data)?data:(data.items||[]);if(sr&&sr.ok){const raw=await sr.json();sections=Array.isArray(raw)?Object.fromEntries(raw.map(s=>[s.id,s])):Array.isArray(raw.sections)?Object.fromEntries(raw.sections.map(s=>[s.id,s])):(raw.sections||raw)}render()}catch(e){$("list").innerHTML=`<div class="empty"><b>Не удалось загрузить базу.</b><p>${esc(e.message)}</p><p>Проверьте, что файлы data/faq.json и data/sections.json опубликованы вместе со страницей.</p></div>`}}
+$("q").addEventListener("input",render);
+$("clearTag").addEventListener("click",()=>{selectedTag="";render()});
+$("list").addEventListener("click",e=>{const button=e.target.closest("button[data-tag]");if(!button)return;e.preventDefault();e.stopPropagation();setTag(button.dataset.tag)});
+$("sectionNav").addEventListener("click",handleNavClick);$("mobileSectionNav").addEventListener("click",handleNavClick);
+$("menuToggle").addEventListener("click",()=>{$("drawerBackdrop").classList.add("open");$("drawerBackdrop").setAttribute("aria-hidden","false");$("menuToggle").setAttribute("aria-expanded","true")});
+$("closeDrawer").addEventListener("click",closeDrawer);$("drawerBackdrop").addEventListener("click",e=>{if(e.target===$("drawerBackdrop"))closeDrawer()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer()});
+const themeButton=$("themeToggle");function setTheme(theme){document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;themeButton.textContent=theme==="dark"?"☀":"☾";themeButton.setAttribute("aria-label",theme==="dark"?"Включить светлую тему":"Включить тёмную тему");themeButton.title=theme==="dark"?"Светлая тема":"Тёмная тема";try{localStorage.setItem("tipa-faq-theme",theme)}catch{}}let initialTheme="light";try{initialTheme=localStorage.getItem("tipa-faq-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch{}setTheme(initialTheme);themeButton.addEventListener("click",()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark"));
+init();
+</script>
+</body></html>

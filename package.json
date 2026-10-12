@@ -1,37 +1,25 @@
 {
   "name": "tipa-faq",
-  "version": "1.0.0",
-  "type": "module",
+  "version": "2.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "process": "tsx src/process.ts",
-    "faq:finish": "npm run faq:ai-answers && npm run faq:ai-compare && npm run faq:check && npm run faq:check-tags && npm run faq:check-evidence && npm run faq:stats",
-    "faq:ai-answers": "tsx src/process.ts --ai-answers",
-    "faq:ai-compare": "tsx src/process.ts --ai-compare",
-    "validate": "tsx src/validate.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write --unsafe .",
-    "format": "biome format --write .",
+    "lint": "biome check src",
+    "format": "biome format --write src",
     "check": "npm run typecheck && npm run lint",
-    "maintenance": "tsx src/maintenance.ts",
-    "faq:check": "tsx src/maintenance.ts check",
-    "faq:stats": "tsx src/maintenance.ts stats",
-    "faq:check-tags": "tsx src/maintenance.ts check-tags",
-    "faq:check-evidence": "tsx src/maintenance.ts check-evidence",
-    "faq:retag": "tsx src/maintenance.ts retag",
-    "faq:clean-tags": "tsx src/maintenance.ts clean-tags",
-    "faq:backup": "tsx src/maintenance.ts backup",
-    "faq:evidence": "tsx src/maintenance.ts evidence"
+    "validate": "tsx src/validate.ts",
+    "faq:ai": "tsx src/process.ts --ai-missing",
+    "faq:reclassify-sections": "tsx src/process.ts --reclassify-sections"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
-    "openai": "^5.0.0"
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@types/node": "^22.20.5",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
   }
 }
