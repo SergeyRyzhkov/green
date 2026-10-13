@@ -24,6 +24,9 @@ export interface FaqSource {
   file: string;
   questionQuote: string;
   answerQuote: string;
+  questionStart?: number;
+  answerStart?: number;
+  chunkIndex?: number;
 }
 
 export interface FaqItem {
@@ -45,10 +48,6 @@ export interface FaqFile {
 export interface ExtractedQaPair {
   questionQuote: string;
   answerQuote: string;
-}
-
-export interface ExtractedQaPairs {
-  pairs: ExtractedQaPair[];
 }
 
 export interface Enrichment {
