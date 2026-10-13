@@ -4,14 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "process": "tsx src/process.ts",
+    "process": "tsx src/extract.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src",
     "format": "biome format --write src",
-    "check": "npm run typecheck && npm run lint",
-    "validate": "tsx src/validate.ts",
-    "faq:ai": "tsx src/process.ts --ai-missing",
-    "faq:reclassify-sections": "tsx src/process.ts --reclassify-sections"
+    "check": "npm run typecheck && npm run lint"
   },
   "dependencies": {
     "dotenv": "^16.4.7"

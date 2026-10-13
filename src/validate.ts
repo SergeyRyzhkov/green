@@ -1,35 +1,131 @@
-import "dotenv/config";
-import path from "node:path";
-import { readJson } from "./io.js";
-import type { FaqFile, SectionsFile, TagsFile } from "./types.js";
+export interface TextMatch {
+  start: number;
+  end: number;
+  quote: string;
+}
 
-export const validateFaq = (faq: FaqFile, sections: SectionsFile, tags: TagsFile): string[] => {
-  const errors: string[] = [];
-  const ids = new Set<string>();
-  const sectionIds = new Set(sections.sections.map((s) => s.id));
-  for (const [index, item] of faq.items.entries()) {
-    const label = `FAQ #${index + 1}`;
-    if (!item.id || ids.has(item.id)) errors.push(`${label}: пустой или повторяющийся id`);
-    ids.add(item.id);
-    if (!item.question?.trim()) errors.push(`${label}: пустой question`);
-    if (typeof item.answer !== "string") errors.push(`${label}: answer должен быть строкой`);
-    if (!Array.isArray(item.sections)) errors.push(`${label}: sections должен быть массивом`);
-    else for (const id of item.sections) if (!sectionIds.has(id)) errors.push(`${label}: неизвестный раздел ${id}`);
-    if (!Array.isArray(item.tags) || item.tags.some((tag) => typeof tag !== "string")) errors.push(`${label}: некорректные tags`);
-    if (!Array.isArray(item.relatedIds)) errors.push(`${label}: relatedIds должен быть массивом`);
-    if (item.aiComparison && (item.aiComparison.agreementPercent < 0 || item.aiComparison.agreementPercent > 100)) errors.push(`${label}: agreementPercent вне диапазона 0..100`);
+function normalizeChar(char: string): string {
+  return char.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/ё/g, "е");
+}
+
+function normalizedLetters(value: string): string {
+  return Array.from(value)
+    .filter((char) => /[\p{L}\p{N}]/u.test(char))
+    .map(normalizeChar)
+    .join("");
+}
+
+export function findQuoteMatches(source: string, quote: string): TextMatch[] {
+  if (quote.trim().length < 8) {
+    return [];
   }
-  for (const item of faq.items) for (const relatedId of item.relatedIds) if (!ids.has(relatedId)) errors.push(`${item.id}: relatedIds ссылается на отсутствующий ${relatedId}`);
-  for (const tag of faq.items.flatMap((item) => item.tags)) if (!tags.tags.includes(tag)) tags.tags.push(tag);
-  return errors;
-};
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve("src/validate.ts")) {
-  const root = process.cwd();
-  const faq = await readJson<FaqFile>(path.join(root, "data/faq.json"), { version: 1, updatedAt: new Date().toISOString(), items: [] });
-  const sections = await readJson<SectionsFile>(path.join(root, "data/sections.json"), { version: 1, sections: [] });
-  const tags = await readJson<TagsFile>(path.join(root, "data/tags.json"), { version: 1, tags: [] });
-  const errors = validateFaq(faq, sections, tags);
-  if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
-  else console.log(`FAQ корректен: ${faq.items.length} записей`);
+  const exactMatches: TextMatch[] = [];
+  let from = 0;
+
+  while (from < source.length) {
+    const start = source.indexOf(quote, from);
+
+    if (start < 0) {
+      break;
+    }
+
+    exactMatches.push({
+      start,
+      end: start + quote.length,
+      quote: source.slice(start, start + quote.length),
+    });
+
+    from = start + 1;
+  }
+
+  if (exactMatches.length > 0) {
+    return exactMatches;
+  }
+
+  const sourceChars: string[] = [];
+  const sourceOffsets: number[] = [];
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    if (!/[\p{L}\p{N}]/u.test(char)) {
+      continue;
+    }
+
+    for (const normalizedChar of normalizeChar(char)) {
+      sourceChars.push(normalizedChar);
+      sourceOffsets.push(i);
+    }
+  }
+
+  const normalizedSource = sourceChars.join("");
+  const normalizedQuote = normalizedLetters(quote);
+
+  if (normalizedQuote.length < 8) {
+    return [];
+  }
+
+  const matches: TextMatch[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < normalizedSource.length) {
+    const index = normalizedSource.indexOf(normalizedQuote, searchFrom);
+
+    if (index < 0) {
+      break;
+    }
+
+    const start = sourceOffsets[index];
+    const end = sourceOffsets[index + normalizedQuote.length - 1] + 1;
+
+    matches.push({
+      start,
+      end,
+      quote: source.slice(start, end).trim(),
+    });
+
+    searchFrom = index + 1;
+  }
+
+  return matches;
+}
+
+export function findQuoteInSource(
+  source: string,
+  quote: string,
+): TextMatch | null {
+  return findQuoteMatches(source, quote)[0] ?? null;
+}
+
+export function makeQuestionLabel(questionQuote: string): string {
+  const clean = questionQuote.replace(/\s+/g, " ").trim();
+
+  if (/[?!…]$/.test(clean)) {
+    return clean;
+  }
+
+  return `${clean}?`;
+}
+
+export function normalizeForSearch(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function makeStableId(file: string, questionQuote: string): string {
+  const input = `${file}\n${normalizeForSearch(questionQuote)}`;
+
+  let hash = 2166136261;
+
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `faq-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }

@@ -4,24 +4,36 @@ export type ComparisonStatus =
   | "disagree"
   | "not_comparable";
 
-export interface AiComparison {
+export interface Section {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface SectionsFile {
+  sections: Section[];
+}
+
+export interface FaqComparison {
   status: ComparisonStatus;
   agreementPercent: number;
   summary: string;
+}
+
+export interface FaqSource {
+  file: string;
+  questionQuote: string;
+  answerQuote: string;
 }
 
 export interface FaqItem {
   id: string;
   question: string;
   answer: string;
-  source: string;
-  context: string;
-  needsContext: boolean;
+  source: FaqSource;
   sections: string[];
-  tags: string[];
-  relatedIds: string[];
-  aiAnswer: string;
-  aiComparison: AiComparison;
+  aiAnswer: string | null;
+  comparison: FaqComparison | null;
 }
 
 export interface FaqFile {
@@ -30,40 +42,17 @@ export interface FaqFile {
   items: FaqItem[];
 }
 
-export interface Section {
-  id: string;
-  name: string;
-  description?: string;
+export interface ExtractedQaPair {
+  questionQuote: string;
+  answerQuote: string;
 }
 
-export interface SectionsFile {
-  version: number;
-  updatedAt?: string | null;
-  sections: Section[];
+export interface ExtractedQaPairs {
+  pairs: ExtractedQaPair[];
 }
 
-export interface TagsFile {
-  version: number;
-  updatedAt?: string | null;
-  tags: string[];
-}
-
-export interface ModelQa {
-  question: string;
-  answer: string;
-  context: string;
-}
-
-export interface EnrichedQa {
+export interface Enrichment {
   sections: string[];
-  tags: string[];
-  needsContext: boolean;
-  aiAnswer: string;
-  aiComparison: AiComparison;
-}
-
-export interface ExtractionResult {
-  items: ModelQa[];
-  rejected: number;
-  modelCount: number;
+  aiAnswer: string | null;
+  comparison: FaqComparison | null;
 }
