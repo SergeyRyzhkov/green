@@ -4,6 +4,14 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { enrichFaq, extractQaPairs } from "./ai.js";
+import type {
+  Enrichment,
+  ExtractedQaPair,
+  FaqFile,
+  FaqItem,
+  Section,
+  SectionsFile,
+} from "./types.js";
 import {
   areNearDuplicates,
   makeQuestionLabel,
@@ -11,7 +19,6 @@ import {
   normalizeForSearch,
   validatePair,
 } from "./validate.js";
-import type { Enrichment, ExtractedQaPair, FaqFile, FaqItem, Section, SectionsFile } from "./types.js";
 
 const ROOT = process.cwd();
 const TRANSCRIPTS_DIR = path.join(ROOT, "transcripts");
@@ -21,7 +28,10 @@ const FAQ_FILE = path.join(DATA_DIR, "faq.json");
 const REJECTED_FILE = path.join(DATA_DIR, "extract-rejected.json");
 
 const CHUNK_CHARS = Math.max(4000, Number(process.env.CHUNK_CHARS ?? 8500));
-const CHUNK_OVERLAP = Math.max(500, Math.min(CHUNK_CHARS - 1000, Number(process.env.CHUNK_OVERLAP ?? 1500)));
+const CHUNK_OVERLAP = Math.max(
+  500,
+  Math.min(CHUNK_CHARS - 1000, Number(process.env.CHUNK_OVERLAP ?? 1500)),
+);
 const QUESTION_SIMILARITY = Number(process.env.MIN_QUESTION_SIMILARITY ?? 0.78);
 const ANSWER_SIMILARITY = Number(process.env.MIN_ANSWER_SIMILARITY ?? 0.78);
 const MAX_GAP = Number(process.env.MAX_QUESTION_TO_ANSWER_GAP ?? 12000);
@@ -56,7 +66,6 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const chunkText = (text: string): Chunk[] => {
   const chunks: Chunk[] = [];
-  const step = CHUNK_CHARS - CHUNK_OVERLAP;
   let start = 0;
   while (start < text.length) {
     let end = Math.min(text.length, start + CHUNK_CHARS);
@@ -64,7 +73,12 @@ const chunkText = (text: string): Chunk[] => {
       const boundary = text.lastIndexOf("\n", end);
       if (boundary > start + CHUNK_CHARS * 0.65) end = boundary;
     }
-    chunks.push({ index: chunks.length + 1, start, end, text: text.slice(start, end) });
+    chunks.push({
+      index: chunks.length + 1,
+      start,
+      end,
+      text: text.slice(start, end),
+    });
     if (end >= text.length) break;
     start = Math.max(start + 1, end - CHUNK_OVERLAP);
   }
@@ -75,18 +89,33 @@ const looksLikeAnswerAsQuestion = (question: string): boolean => {
   const q = normalizeForSearch(question);
   if (!q) return true;
   const answerOpeners = [
-    "ну они", "ну это", "а так вот", "я не знаю", "а я не знаю", "то есть", "собственно",
-    "да и последующее", "но то что", "граница рациональности", "не насколько они хуже",
+    "ну они",
+    "ну это",
+    "а так вот",
+    "я не знаю",
+    "а я не знаю",
+    "то есть",
+    "собственно",
+    "да и последующее",
+    "но то что",
+    "граница рациональности",
+    "не насколько они хуже",
   ];
   return answerOpeners.some((prefix) => q.startsWith(prefix));
 };
 
-const processTranscript = async (file: string, source: string, sections: Section[]) => {
+const processTranscript = async (
+  file: string,
+  source: string,
+  sections: Section[],
+) => {
   const chunks = chunkText(source);
   const candidates: Candidate[] = [];
   const rejected: Rejected[] = [];
   console.log(`\nФайл: ${file} (${source.length} символов)`);
-  console.log(`Фрагментов: ${chunks.length}; размер: ${CHUNK_CHARS}; перекрытие: ${CHUNK_OVERLAP}`);
+  console.log(
+    `Фрагментов: ${chunks.length}; размер: ${CHUNK_CHARS}; перекрытие: ${CHUNK_OVERLAP}`,
+  );
 
   for (const chunk of chunks) {
     console.log(`  Извлечение пар ${chunk.index}/${chunks.length}`);
@@ -102,24 +131,43 @@ const processTranscript = async (file: string, source: string, sections: Section
         answerQuote: "",
         reason: `chunk_request_failed: ${String(error)}`,
       });
-      console.error(`    Фрагмент не обработан, но процесс продолжается: ${String(error)}`);
+      console.error(
+        `    Фрагмент не обработан, но процесс продолжается: ${String(error)}`,
+      );
       continue;
     }
 
     let accepted = 0;
     for (const pair of pairs) {
       if (looksLikeAnswerAsQuestion(pair.questionQuote)) {
-        rejected.push({ ...pair, file, chunkIndex: chunk.index, reason: "question_looks_like_author_answer" });
+        rejected.push({
+          ...pair,
+          file,
+          chunkIndex: chunk.index,
+          reason: "question_looks_like_author_answer",
+        });
         continue;
       }
-      const checked = validatePair(chunk.text, pair.questionQuote, pair.answerQuote, {
-        questionSimilarity: QUESTION_SIMILARITY,
-        answerSimilarity: ANSWER_SIMILARITY,
-        maxGap: MAX_GAP,
-      });
+      const checked = validatePair(
+        chunk.text,
+        pair.questionQuote,
+        pair.answerQuote,
+        {
+          questionSimilarity: QUESTION_SIMILARITY,
+          answerSimilarity: ANSWER_SIMILARITY,
+          maxGap: MAX_GAP,
+        },
+      );
       if (!checked.ok || !checked.question || !checked.answer) {
-        rejected.push({ ...pair, file, chunkIndex: chunk.index, reason: checked.reason ?? "unknown_validation_error" });
-        console.log(`    Отклонено [${checked.reason}]: ${pair.questionQuote.slice(0, 130)}`);
+        rejected.push({
+          ...pair,
+          file,
+          chunkIndex: chunk.index,
+          reason: checked.reason ?? "unknown_validation_error",
+        });
+        console.log(
+          `    Отклонено [${checked.reason}]: ${pair.questionQuote.slice(0, 130)}`,
+        );
         continue;
       }
       candidates.push({
@@ -133,25 +181,36 @@ const processTranscript = async (file: string, source: string, sections: Section
       });
       accepted += 1;
     }
-    console.log(`    Подтверждено: ${accepted}; отклонено: ${pairs.length - accepted}`);
+    console.log(
+      `    Подтверждено: ${accepted}; отклонено: ${pairs.length - accepted}`,
+    );
   }
 
   // De-duplicate by normalized wording and nearby source position. Keep the more complete question.
   candidates.sort((a, b) => a.questionStart - b.questionStart);
   const unique: Candidate[] = [];
   for (const candidate of candidates) {
-    const duplicateIndex = unique.findIndex((existing) =>
-      existing.file === candidate.file &&
-      areNearDuplicates(existing.pair.questionQuote, candidate.pair.questionQuote) &&
-      Math.abs(existing.questionStart - candidate.questionStart) < CHUNK_CHARS,
+    const duplicateIndex = unique.findIndex(
+      (existing) =>
+        existing.file === candidate.file &&
+        areNearDuplicates(
+          existing.pair.questionQuote,
+          candidate.pair.questionQuote,
+        ) &&
+        Math.abs(existing.questionStart - candidate.questionStart) <
+          CHUNK_CHARS,
     );
     if (duplicateIndex < 0) {
       unique.push(candidate);
       continue;
     }
     const existing = unique[duplicateIndex];
-    const candidateLength = normalizeForSearch(candidate.pair.questionQuote).length;
-    const existingLength = normalizeForSearch(existing.pair.questionQuote).length;
+    const candidateLength = normalizeForSearch(
+      candidate.pair.questionQuote,
+    ).length;
+    const existingLength = normalizeForSearch(
+      existing.pair.questionQuote,
+    ).length;
     if (candidateLength > existingLength) unique[duplicateIndex] = candidate;
   }
 
@@ -162,12 +221,20 @@ const processTranscript = async (file: string, source: string, sections: Section
   for (let i = 0; i < unique.length; i += 1) {
     const candidate = unique[i];
     const question = makeQuestionLabel(candidate.questionQuote);
-    console.log(`  Обработка ${i + 1}/${unique.length}: ${question.slice(0, 150)}`);
-    let enrichment: Enrichment = { sections: [], aiAnswer: null, comparison: null };
+    console.log(
+      `  Обработка ${i + 1}/${unique.length}: ${question.slice(0, 150)}`,
+    );
+    let enrichment: Enrichment = {
+      sections: [],
+      aiAnswer: null,
+      comparison: null,
+    };
     try {
       enrichment = await enrichFaq(question, candidate.answerQuote, sections);
     } catch (error) {
-      console.warn(`    Обогащение пропущено, исходная пара сохранена: ${String(error)}`);
+      console.warn(
+        `    Обогащение пропущено, исходная пара сохранена: ${String(error)}`,
+      );
     }
     items.push({
       id: makeStableId(file, candidate.pair.questionQuote),
@@ -193,10 +260,15 @@ const processTranscript = async (file: string, source: string, sections: Section
 
 const main = async () => {
   await mkdir(DATA_DIR, { recursive: true });
-  const sectionsData = JSON.parse(await readFile(SECTIONS_FILE, "utf8")) as SectionsFile;
+  const sectionsData = JSON.parse(
+    await readFile(SECTIONS_FILE, "utf8"),
+  ) as SectionsFile;
   const sections = sectionsData.sections;
-  const files = (await readdir(TRANSCRIPTS_DIR)).filter((name) => name.toLowerCase().endsWith(".txt")).sort();
-  if (files.length === 0) throw new Error(`В ${TRANSCRIPTS_DIR} не найдено .txt-файлов`);
+  const files = (await readdir(TRANSCRIPTS_DIR))
+    .filter((name) => name.toLowerCase().endsWith(".txt"))
+    .sort();
+  if (files.length === 0)
+    throw new Error(`В ${TRANSCRIPTS_DIR} не найдено .txt-файлов`);
 
   console.log(`Модель: ${process.env.OLLAMA_MODEL ?? "qwen3.5:4b"}`);
   console.log(`Файлов расшифровок: ${files.length}`);
@@ -214,16 +286,29 @@ const main = async () => {
   // Cross-file de-duplication too; retain the item with the longer, more informative question.
   const finalItems: FaqItem[] = [];
   for (const item of allItems) {
-    const duplicateIndex = finalItems.findIndex((existing) => areNearDuplicates(existing.question, item.question));
+    const duplicateIndex = finalItems.findIndex((existing) =>
+      areNearDuplicates(existing.question, item.question),
+    );
     if (duplicateIndex < 0) finalItems.push(item);
-    else if (normalizeForSearch(item.question).length > normalizeForSearch(finalItems[duplicateIndex].question).length) {
+    else if (
+      normalizeForSearch(item.question).length >
+      normalizeForSearch(finalItems[duplicateIndex].question).length
+    ) {
       finalItems[duplicateIndex] = item;
     }
   }
 
-  const faq: FaqFile = { version: 1, updatedAt: new Date().toISOString(), items: finalItems };
+  const faq: FaqFile = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items: finalItems,
+  };
   await writeFile(FAQ_FILE, `${JSON.stringify(faq, null, 2)}\n`, "utf8");
-  await writeFile(REJECTED_FILE, `${JSON.stringify({ updatedAt: new Date().toISOString(), rejected: allRejected }, null, 2)}\n`, "utf8");
+  await writeFile(
+    REJECTED_FILE,
+    `${JSON.stringify({ updatedAt: new Date().toISOString(), rejected: allRejected }, null, 2)}\n`,
+    "utf8",
+  );
 
   console.log("\nГотово.");
   console.log(`FAQ записей создано: ${finalItems.length}`);

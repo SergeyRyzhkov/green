@@ -31,7 +31,10 @@ const tokensWithOffsets = (text: string) => {
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     tokens.push({
-      value: match[0].normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/ё/g, "е"),
+      value: match[0]
+        .normalize("NFKC")
+        .toLocaleLowerCase("ru-RU")
+        .replace(/ё/g, "е"),
       start: match.index,
       end: match.index + match[0].length,
     });
@@ -73,10 +76,13 @@ export const findQuoteInSource = (
 ): TextMatch | null => {
   const target = tokensWithOffsets(quote);
   const sourceTokens = tokensWithOffsets(source);
-  if (target.length < 2 || sourceTokens.length < target.length * 0.55) return null;
+  if (target.length < 2 || sourceTokens.length < target.length * 0.55)
+    return null;
 
   const targetValues = target.map((token) => token.value);
-  const startTokenIndex = sourceTokens.findIndex((token) => token.start >= fromIndex);
+  const startTokenIndex = sourceTokens.findIndex(
+    (token) => token.start >= fromIndex,
+  );
   if (startTokenIndex < 0) return null;
 
   // Fast path: exact raw text, but never silently extend the quote.
@@ -104,7 +110,9 @@ export const findQuoteInSource = (
     for (let length = minLen; length <= maxLen; length += 1) {
       const lastIndex = i + length - 1;
       if (lastIndex >= sourceTokens.length) break;
-      const window = sourceTokens.slice(i, lastIndex + 1).map((token) => token.value);
+      const window = sourceTokens
+        .slice(i, lastIndex + 1)
+        .map((token) => token.value);
       let matches = 0;
       let score = 0;
       const denominator = Math.max(targetValues.length, window.length);
@@ -128,7 +136,8 @@ export const findQuoteInSource = (
         }
       }
       const similarity = score / denominator;
-      if (matches < Math.max(2, Math.floor(targetValues.length * 0.65))) continue;
+      if (matches < Math.max(2, Math.floor(targetValues.length * 0.65)))
+        continue;
       if (similarity < minSimilarity) continue;
       const candidate: TextMatch = {
         start: sourceTokens[i].start,
@@ -152,16 +161,23 @@ export const findApproximateQuoteInSource = (
 const looksLikeQuestion = (question: string): boolean => {
   const value = question.trim();
   if (value.length < 14 || tokensWithOffsets(value).length < 4) return false;
-  if (/^(ну|вот|то есть|а я не знаю|я не знаю|да и|но это)\b/i.test(value)) return false;
+  if (/^(ну|вот|то есть|а я не знаю|я не знаю|да и|но это)\b/i.test(value))
+    return false;
   if (/\?/.test(value)) return true;
-  return /^(подскажите|расскажите|объясните|интересует|можно ли|нужно ли|стоит ли|как |почему |зачем |какой |какая |какие |какое |сколько |насколько |в каких случаях|будет ли|есть ли|чем |куда |где |когда |планирую|хотелось бы|хочется )/i.test(value);
+  return /^(подскажите|расскажите|объясните|интересует|можно ли|нужно ли|стоит ли|как |почему |зачем |какой |какая |какие |какое |сколько |насколько |в каких случаях|будет ли|есть ли|чем |куда |где |когда |планирую|хотелось бы|хочется )/i.test(
+    value,
+  );
 };
 
 export const validatePair = (
   source: string,
   questionQuote: string,
   answerQuote: string,
-  options: { questionSimilarity?: number; answerSimilarity?: number; maxGap?: number } = {},
+  options: {
+    questionSimilarity?: number;
+    answerSimilarity?: number;
+    maxGap?: number;
+  } = {},
 ): PairValidation => {
   const qMin = options.questionSimilarity ?? 0.78;
   const aMin = options.answerSimilarity ?? 0.78;
@@ -169,15 +185,27 @@ export const validatePair = (
 
   if (!questionQuote?.trim()) return { ok: false, reason: "empty_question" };
   if (!answerQuote?.trim()) return { ok: false, reason: "empty_answer" };
-  if (!looksLikeQuestion(questionQuote)) return { ok: false, reason: "question_not_question_like" };
+  if (!looksLikeQuestion(questionQuote))
+    return { ok: false, reason: "question_not_question_like" };
 
   const question = findQuoteInSource(source, questionQuote, qMin);
   if (!question) return { ok: false, reason: "question_quote_not_found" };
   const answer = findQuoteInSource(source, answerQuote, aMin, question.end);
-  if (!answer) return { ok: false, reason: "answer_quote_not_found_after_question", question };
-  if (answer.start < question.end) return { ok: false, reason: "answer_before_question", question, answer };
+  if (!answer)
+    return {
+      ok: false,
+      reason: "answer_quote_not_found_after_question",
+      question,
+    };
+  if (answer.start < question.end)
+    return { ok: false, reason: "answer_before_question", question, answer };
   if (answer.start - question.end > maxGap) {
-    return { ok: false, reason: "question_answer_gap_too_large", question, answer };
+    return {
+      ok: false,
+      reason: "question_answer_gap_too_large",
+      question,
+      answer,
+    };
   }
   if (normalizeForSearch(question.quote) === normalizeForSearch(answer.quote)) {
     return { ok: false, reason: "question_equals_answer", question, answer };
